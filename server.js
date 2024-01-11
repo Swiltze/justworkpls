@@ -4,6 +4,7 @@ const http = require('http').createServer(app);
 const io = require('socket.io')(http);
 const sqlite3 = require('sqlite3').verbose();
 const session = require('express-session');
+const SQLiteStore = require('connect-sqlite3')(session);
 const sharedsession = require('express-socket.io-session');
 const bcrypt = require('bcrypt');
 const saltRounds = 10;
@@ -13,10 +14,19 @@ const cors = require('cors');
 
 // Set up session middleware
 const sessionMiddleware = session({
+  store: new SQLiteStore({
+    db: 'sessions.sqlite', // This is the file where sessions will be stored
+    dir: './db', // Directory where the sessions.sqlite file will be placed
+    // Other options can be set according to the connect-sqlite3 documentation
+  }),
   secret: 'secret key',
   resave: false,
   saveUninitialized: false,
-  cookie: { secure: false } // for development, set to true in production with HTTPS
+  cookie: {
+    secure: false, // Set to true in production with HTTPS
+    httpOnly: true, // Helps against XSS attacks
+    maxAge: 24 * 60 * 60 * 1000 // 24 hours for example
+  }
 });
 app.use(sessionMiddleware);
 
@@ -30,11 +40,12 @@ const corsOptions = {
   credentials: true,
   optionsSuccessStatus: 204
 };
+app.use(cors(corsOptions));
 
 // Body parser middleware to parse form data
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json()); // To parse JSON bodies
-app.use(cors(corsOptions));
+
 app.set('view engine', 'ejs');
 
 
@@ -79,23 +90,26 @@ function isAdmin(req, res, next) {
 function isAuthenticated(req, res, next) {
   // This is a placeholder for whatever authentication check you have in place.
   // For example, you might check if the user's session indicates they are logged in:
-  if (req.session && req.session.userId) {
+  if (req.session.user) {
     return next(); // The user is authenticated, so continue to the next middleware
   } else {
-    // The user is not authenticated. Redirect them to the login page or send an error
+    console.log('User is not authenticated, redirecting to /');// The user is not authenticated. Redirect them to the login page or send an error
     res.redirect('/'); // Redirect to the home page (or login page)
     // Alternatively, you could send a 401 Unauthorized status code:
     // res.sendStatus(401);
   }
 }
-
-// Chat route that requires authentication
 app.get('/chat', isAuthenticated, (req, res) => {
   // At this point, the user is authenticated, so you can render the chat view
-  res.render('chat', {
-    // You can pass additional data to the view here, such as the user's information
-    username: req.session.username // Example: passing the username to the view
-  });
+  if (req.session.user) { // Make sure the user object exists in the session
+    res.render('chat', {
+      // Pass the username to the view from the session's user object
+      username: req.session.user.username
+    });
+  } else {
+    // If for some reason the user object is not in the session, handle the error
+    res.redirect('/'); // Redirect to the login page or an error page
+  }
 });
 
 app.get('/', (req, res) => {
@@ -122,23 +136,46 @@ app.post('/register', (req, res) => {
 // Login POST route
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
+  console.log('Attempting to log in user:', username); // Log the attempt to log in
+
   db.get('SELECT id, password, role FROM users WHERE username = ?', [username], (err, row) => {
     if (err) {
-      res.status(500).send('Error logging in');
-    } else if (row) {
+      console.error('Error during database query:', err);
+      return res.status(500).send('Error logging in');
+    }
+
+    if (row) {
       bcrypt.compare(password, row.password, (err, result) => {
+        if (err) {
+          console.error('Error comparing passwords:', err);
+          return res.status(500).send('Error during password comparison');
+        }
+
         if (result) {
-          req.session.userId = { id: row.id, role: row.role }; // Set user ID in session
-          res.redirect('/chat'); // Redirect to chat page after successful login
+          req.session.user = { id: row.id, role: row.role, username: username };
+          console.log('User authenticated, saving session:', req.session.user); // Log the authenticated user
+
+          req.session.save(err => {
+            if (err) {
+              console.error('Error saving session:', err);
+              return res.status(500).send('Error saving session');
+            }
+
+            console.log('Session saved, redirecting to /chat'); // Log the successful session save
+            res.redirect('/chat'); // Redirect to chat page after successful login
+          });
         } else {
+          console.log('Invalid credentials for user:', username); // Log the invalid credentials
           res.status(401).send('Invalid credentials');
         }
       });
     } else {
+      console.log('User not found:', username); // Log the user not found
       res.status(401).send('User not found');
     }
   });
 });
+
 
 
 // Admin routes
@@ -177,10 +214,15 @@ app.post('/delete-message', isAdmin, (req, res) => {
 
 io.on('connection', (socket) => {
   // Retrieve the userId from the socket's session
-  const userId = socket.handshake.session.userId;
+  const userId = socket.handshake.session.user ? socket.handshake.session.user.id : null;
   const userSockets = {};
+
+  if (!userId) {
+    console.error('User ID not found in session');
+    return; // Stop further execution if userId is not found
+  }
   
-  let name;
+  let username;
 
   // Fetch the username from the database
   db.get('SELECT username FROM users WHERE id = ?', [userId], (err, row) => {
