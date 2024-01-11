@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chat App</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      position:relative;
+    }
+
+    #messages {
+      list-style-type: none;
+      padding: 0;
+      position:relative;
+    }
+
+    #chat-form {
+      margin-top: 10px;
+    }
+
+    .admin-actions {
+      display: none;
+      position: absolute;
+      background-color: #f9f9f9;
+      border: 1px solid #ddd;
+      padding: 5px;
+      z-index: 2;
+      cursor: pointer;
+    }
+
+    .admin-actions.visible{
+      display: block;
+    }
+
+    .clickable-user {
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <form id="logout-form" action="/logout" method="POST">
+    <button type="submit">Logout</button>
+  </form>
+  <ul id="messages"></ul>
+  <form id="chat-form" action="">
+    <input id="message-input" autocomplete="off" placeholder="Type a message..." /><button>Send</button>
+  </form>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', (event) => {
+      const socket = io();
+
+      // Send message to server
+      document.querySelector('#chat-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        let messageInput = document.querySelector('#message-input');
+        if (messageInput.value) {
+          socket.emit('chatMessage', sanitizeInput(messageInput.value));
+          messageInput.value = '';
+        }
+      });
+
+      // Logout event
+      document.querySelector('#logout-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        fetch('/logout', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
+          }
+        }).then(response => {
+          if (response.ok) {
+            window.location.href = '/';
+          } else {
+            console.error('Logout failed');
+          }
+        }).catch(error => {
+          console.error('Error:', error);
+        });
+      });
+
+      // Click event on messages
+      document.querySelector('#messages').addEventListener('click', (e) => {
+        let clickedUser = e.target;
+        if (!clickedUser.classList.contains('clickable-user')) {
+          clickedUser = clickedUser.closest('.clickable-user');
+        }
+        
+        if (clickedUser) {
+           const userId = clickedUser.getAttribute('data-user-id');
+           showAdminOptions(userId, clickedUser);
+        }          
+      });
+
+      // Receive message from server
+      socket.on('chatMessage', (data) => {
+        document.querySelector('#messages').appendChild(createMessageListItem(data.username, data.message, data.userId));
+        window.scrollTo(0, document.body.scrollHeight);
+      });
+
+      // Get chat history
+      socket.on('chatHistory', (messages) => {
+        const fragment = document.createDocumentFragment();
+        messages.forEach((messageObj) => {
+          fragment.appendChild(createMessageListItem(messageObj.username, messageObj.message, messageObj.userId));
+        });
+        document.querySelector('#messages').appendChild(fragment);
+        window.scrollTo(0, document.body.scrollHeight);
+      });
+    });
+
+    function showAdminOptions(userId, targetElement) {
+      const adminActions = targetElement.nextElementSibling;
+      if (adminActions && adminActions.classList.contains('admin-actions')) {
+        adminActions.classList.toggle('visible');
+      }
+    }
+
+    // Function to sanitize user input
+    function sanitizeInput(input) {
+      const div = document.createElement('div');
+      div.textContent = input;
+      return div.innerHTML;
+    }
+
+    // Function to create message list item
+    function createMessageListItem(username, message, userId, messageId) {
+      let item = document.createElement('li');
+      item.setAttribute('data-message-id', messageId);
+
+      let userSpan = document.createElement('span');
+      userSpan.textContent = username;
+      userSpan.className = 'clickable-user';
+      userSpan.setAttribute('data-user-id', userId);
+      item.appendChild(userSpan);
+
+      // Admin action buttons
+      let adminActions = document.createElement('span');
+      adminActions.className = 'admin-actions';
+      adminActions.innerHTML = `<button class="ban-btn">Ban</button> <button class="unban-btn">Unban</button> <button class="delete-btn">Delete</button> `;
+      item.appendChild(adminActions);
+
+      item.appendChild(document.createTextNode(`: ${message}`));
+      return item;
+    }
+
+    // Function to ban a user
+    function banUser(userId) {
+      const reason = prompt('Please provide a reason for the ban:');
+      if (reason) {
+        fetch('/ban-user', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
+          },
+          body: `userId=${userId}&reason=${encodeURIComponent(reason)}`
+        }).then(response => {
+          if (!response.ok) {
+            console.error('Unable to ban user');
+          }
+        }).catch(error => {
+          console.error('Error:', error);
+        });
+      }
+    }
+
+    function unbanUser(userId) {
+      fetch('/unban-user', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+          },
+          body: `userId=${userId}`
+      }).then(response => {
+         if (!response.ok) {
+          console.error('Unable to unban user');
+        }
+      }).catch(error => {
+        console.error('Error:', error);
+      });
+    }
+
+    function deleteMessage(messageId) {
+      fetch('/delete-message', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+          },
+          body: `messageId=${messageId}`
+          }).then(response => {
+            if (!response.ok) {
+              console.error('Unable to delete message');
+            }
+            }).catch(error => {
+              console.error('Error:', error);
+              });
+            }
+
+    socket.on('deleteMessage', (messageId) => {
+      const messageElement = document.querySelector(`[data-message-id="${messageId}"]`);
+      if (messageElement) {
+        messageElement.remove();
+      }
+    });
+    
+    socket.on('banUser', (userId) => {
+      console.log(`User ${username} has been banned`);
+    });
+
+    socket.on('unbanUser', (userId) => {
+      console.log(`User ${username} has been unbanned`);
+    });
+    </script>
+    </body>
+    </html>
+      
