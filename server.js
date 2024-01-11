@@ -309,13 +309,26 @@ io.on('connection', (socket) => {
           console.error(err);
           return;
         }
+        if (!row) {
+          console.error('User not found in database');
+          socket.emit('errorMessage', 'User not found.');
+          return;
+        }
         const username = row.username;
+    
         db.run('INSERT INTO messages (user_id, message) VALUES (?, ?)', [userId, msg], function(err) {
           if (err) {
             console.error(err);
             return;
           }
-          io.emit('chatMessage', { username, message: msg, timestamp: new Date() });
+          const insertedMessageId = this.lastID;
+          io.emit('chatMessage', {
+            username: username,
+            message: msg,
+            userId: userId, // Use the userId from the session
+            messageId: insertedMessageId,
+            timestamp: new Date()
+          });
         });
       });
     }

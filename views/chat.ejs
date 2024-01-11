@@ -83,26 +83,24 @@
       });
 
       // Click event on messages
-      document.querySelector('#messages').addEventListener('click', (e) => {
-        let clickedUser = e.target;
-        if (!clickedUser.classList.contains('clickable-user')) {
-          clickedUser = clickedUser.closest('.clickable-user');
-        }
-        
-        if (clickedUser) {
-           const userId = clickedUser.getAttribute('data-user-id');
-           showAdminOptions(userId, clickedUser);
-        } 
-        if (e.target.classList.contains('delete-btn') || e.target.parentElement.classList.contains('delete-btn')) {
-    // Get the messageId from the closest parent li element
+     document.querySelector('#messages').addEventListener('click', (e) => {
+  // Check if a username was clicked
+  if (e.target.classList.contains('clickable-user')) {
+    const userId = e.target.getAttribute('data-user-id');
+    showAdminOptions(userId, e.target);
+  }
+
+  // Check if the delete button was clicked
+  if (e.target.classList.contains('delete-btn') || e.target.parentElement.classList.contains('delete-btn')) {
     const messageElement = e.target.closest('li[data-message-id]');
     const messageId = messageElement.getAttribute('data-message-id');
     deleteMessage(messageId);
-  }         
-      });
+  }
+});
 
       // Receive message from server
       socket.on('chatMessage', (data) => {
+        const messageListItem = createMessageListItem(data.username, data.message, data.userId, data.messageId);
         document.querySelector('#messages').appendChild(createMessageListItem(data.username, data.message, data.userId));
         window.scrollTo(0, document.body.scrollHeight);
       });
@@ -203,13 +201,20 @@ function createMessageListItem(username, message, userId, messageId) {
             if (!response.ok) {
               console.error('Unable to delete message');
             }
+            // Add this line to remove the message from the DOM if the server responds OK
+    else {
+      const messageElement = document.querySelector(`li[data-message-id="${messageId}"]`);
+      if (messageElement) {
+        messageElement.remove();
+      }
+    }
             }).catch(error => {
               console.error('Error:', error);
               });
             }
 
     socket.on('deleteMessage', (messageId) => {
-      const messageElement = document.querySelector(`[data-message-id="${messageId}"]`);
+      const messageElement = document.querySelector(`li[data-message-id="${messageId}"]`);
       if (messageElement) {
         messageElement.remove();
       }
