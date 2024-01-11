@@ -92,7 +92,13 @@
         if (clickedUser) {
            const userId = clickedUser.getAttribute('data-user-id');
            showAdminOptions(userId, clickedUser);
-        }          
+        } 
+        if (e.target.classList.contains('delete-btn') || e.target.parentElement.classList.contains('delete-btn')) {
+    // Get the messageId from the closest parent li element
+    const messageElement = e.target.closest('li[data-message-id]');
+    const messageId = messageElement.getAttribute('data-message-id');
+    deleteMessage(messageId);
+  }         
       });
 
       // Receive message from server
@@ -127,25 +133,27 @@
     }
 
     // Function to create message list item
-    function createMessageListItem(username, message, userId, messageId) {
-      let item = document.createElement('li');
-      item.setAttribute('data-message-id', messageId);
+function createMessageListItem(username, message, userId, messageId) {
+  let item = document.createElement('li');
+  item.setAttribute('data-message-id', messageId);
 
-      let userSpan = document.createElement('span');
-      userSpan.textContent = username;
-      userSpan.className = 'clickable-user';
-      userSpan.setAttribute('data-user-id', userId);
-      item.appendChild(userSpan);
+  let userSpan = document.createElement('span');
+  userSpan.textContent = username;
+  userSpan.className = 'clickable-user';
+  userSpan.setAttribute('data-user-id', userId);
+  item.appendChild(userSpan);
 
-      // Admin action buttons
-      let adminActions = document.createElement('span');
-      adminActions.className = 'admin-actions';
-      adminActions.innerHTML = `<button class="ban-btn">Ban</button> <button class="unban-btn">Unban</button> <button class="delete-btn">Delete</button> `;
-      item.appendChild(adminActions);
+  // Admin action buttons
+  let adminActions = document.createElement('span');
+  adminActions.className = 'admin-actions';
+  // Use the messageId directly in the string
+  adminActions.innerHTML = `<button class="ban-btn">Ban</button> <button class="unban-btn">Unban</button> <button class="delete-btn" data-message-id="${messageId}">Delete</button>`;
+  item.appendChild(adminActions);
 
-      item.appendChild(document.createTextNode(`: ${message}`));
-      return item;
-    }
+  item.appendChild(document.createTextNode(`: ${message}`));
+  return item;
+}
+
 
     // Function to ban a user
     function banUser(userId) {
@@ -189,6 +197,7 @@
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded'
           },
+          credentials: 'include',
           body: `messageId=${messageId}`
           }).then(response => {
             if (!response.ok) {

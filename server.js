@@ -42,31 +42,104 @@ app.set('view engine', 'ejs');
 const db = new sqlite3.Database('./db/chatdb.sqlite', (err) => {
   if (err) {
     console.error(err.message);
+  } else {
+  console.log('Connected to the SQLite database.');
+  db.run(`CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE,
+    password TEXT NOT NULL,
+    role TEXT DEFAULT 'user'
+  )`);
+  db.run(`CREATE TABLE IF NOT EXISTS messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    message TEXT NOT NULL,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  )`);
+  db.run(`CREATE TABLE IF NOT EXISTS banned_users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    reason TEXT,
+    banned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  )`);
   }
-  console.log('Connected to the SQLite database.');  
 });
 
 function isAdmin(req, res, next) {
-  const laravelSessionCookie = req.headers.cookie;
-
-  axios.get('/api/user', {
-    headers: {
-      'Cookie': laravelSessionCookie
-    }
-  }).then(response => {
-    if (response.data.role === 'admin') {
-      return next();
-    } else {
+  console.log('Session:', req.session); // Add this line to log the session details
+  if (req.session.user && req.session.user.role === 'admin') {
+    return next();
+  } else {
     return res.sendStatus(403);
   }
-  }).catch(err => {
-    return res.sendStatus(401);
-  });
 }
+
+function isAuthenticated(req, res, next) {
+  // This is a placeholder for whatever authentication check you have in place.
+  // For example, you might check if the user's session indicates they are logged in:
+  if (req.session && req.session.userId) {
+    return next(); // The user is authenticated, so continue to the next middleware
+  } else {
+    // The user is not authenticated. Redirect them to the login page or send an error
+    res.redirect('/'); // Redirect to the home page (or login page)
+    // Alternatively, you could send a 401 Unauthorized status code:
+    // res.sendStatus(401);
+  }
+}
+
+// Chat route that requires authentication
+app.get('/chat', isAuthenticated, (req, res) => {
+  // At this point, the user is authenticated, so you can render the chat view
+  res.render('chat', {
+    // You can pass additional data to the view here, such as the user's information
+    username: req.session.username // Example: passing the username to the view
+  });
+});
 
 app.get('/', (req, res) => {
   res.render('index');
 });
+
+app.post('/register', (req, res) => {
+  const { username, password } = req.body;
+  bcrypt.hash(password, saltRounds, (err, hash) => {
+    if (err) {
+      res.status(500).send('Error registering user');
+    } else {
+      db.run('INSERT INTO users (username, password) VALUES (?, ?)', [username, hash], (err) => {
+        if (err) {
+          res.status(500).send('Username already taken');
+        } else {
+          res.redirect('/login'); // Redirect to login page after successful registration
+        }
+      });
+    }
+  });
+});
+
+// Login POST route
+app.post('/login', (req, res) => {
+  const { username, password } = req.body;
+  db.get('SELECT id, password, role FROM users WHERE username = ?', [username], (err, row) => {
+    if (err) {
+      res.status(500).send('Error logging in');
+    } else if (row) {
+      bcrypt.compare(password, row.password, (err, result) => {
+        if (result) {
+          req.session.userId = { id: row.id, role: row.role }; // Set user ID in session
+          res.redirect('/chat'); // Redirect to chat page after successful login
+        } else {
+          res.status(401).send('Invalid credentials');
+        }
+      });
+    } else {
+      res.status(401).send('User not found');
+    }
+  });
+});
+
 
 // Admin routes
 app.post('/ban-user', isAdmin, (req, res) => {
@@ -110,7 +183,7 @@ io.on('connection', (socket) => {
   let name;
 
   // Fetch the username from the database
-  db.get('SELECT name FROM users WHERE id = ?', [userId], (err, row) => {
+  db.get('SELECT username FROM users WHERE id = ?', [userId], (err, row) => {
     if (err) {
       console.error(err);
       return;
