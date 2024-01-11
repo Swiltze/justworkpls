@@ -101,7 +101,7 @@
       // Receive message from server
       socket.on('chatMessage', (data) => {
         const messageListItem = createMessageListItem(data.username, data.message, data.userId, data.messageId);
-        document.querySelector('#messages').appendChild(createMessageListItem(data.username, data.message, data.userId));
+        document.querySelector('#messages').appendChild(createMessageListItem);
         window.scrollTo(0, document.body.scrollHeight);
       });
 
@@ -190,6 +190,7 @@ function createMessageListItem(username, message, userId, messageId) {
     }
 
     function deleteMessage(messageId) {
+      console.log('Attempting to delete message with ID:', messageId);
       fetch('/delete-message', {
         method: 'POST',
         headers: {

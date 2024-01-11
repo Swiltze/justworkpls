@@ -199,7 +199,7 @@ app.post('/ban-user', isAdmin, (req, res) => {
 
 app.post('/delete-message', isAdmin, (req, res) => {
   const { messageId } = req.body;
-
+console.log('Attempting to delete message with ID:', messageId); 
   // Delete the message from the messages table
   db.run('DELETE FROM messages WHERE id = ?', [messageId], (err) => {
     if (err) {
@@ -339,9 +339,7 @@ io.on('connection', (socket) => {
   });
   
   
-  socket.on('disconnect', () => {
-    console.log(`${username} disconnected`); // Log the username to the console
-  });
+  
 });
 
 
